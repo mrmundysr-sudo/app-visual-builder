@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'AppVisualBuilder_starter.zip'
+      - 'AppVisualBuilder.zip'
       - '.github/workflows/build-app-visual-builder.yml'
   workflow_dispatch:
 jobs:
@@ -17,7 +17,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import zipfile, pathlib, sys
-          p=pathlib.Path('AppVisualBuilder_starter.zip')
+          p=pathlib.Path('AppVisualBuilder.zip')
           with zipfile.ZipFile(p) as z:
               names=z.namelist()
               print('ZIP entries:',len(names))
@@ -33,7 +33,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - name: Configure Android SDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+          yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true
       - name: Build debug APK
         run: |
           cd source/AppVisualBuilder
