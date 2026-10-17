@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Inspect and extract Claude starter
@@ -49,8 +49,11 @@ jobs:
         run: |
           find source -path '*/build/outputs/apk/debug/*.apk' -type f -size +100k -print -exec sha256sum {} \;
           test -n "$(find source -path '*/build/outputs/apk/debug/*.apk' -type f -size +100k -print -quit)"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AppVisualBuilder-debug-apk
-          path: source/**/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+      - name: Publish APK to GitHub Release (no artifact storage)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(find source -path '*/build/outputs/apk/debug/*.apk' -type f -print -quit)
+          test -s "$APK"
+          TAG="apk-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" "$APK#AppVisualBuilder-debug.apk" --title "App Visual Builder APK $GITHUB_RUN_NUMBER" --notes "Debug APK built from Grok AppVisualBuilder.zip" --target "$GITHUB_SHA"
