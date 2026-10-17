@@ -1,0 +1,53 @@
+name: Build App Visual Builder APK
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'AppVisualBuilder_starter.zip'
+      - '.github/workflows/build-app-visual-builder.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect and extract Claude starter
+        run: |
+          python3 - <<'PY'
+          import zipfile, pathlib, sys
+          p=pathlib.Path('AppVisualBuilder_starter.zip')
+          with zipfile.ZipFile(p) as z:
+              names=z.namelist()
+              print('ZIP entries:',len(names))
+              for n in names: print(n)
+              if not any(n.endswith('settings.gradle.kts') for n in names): sys.exit('Missing Gradle settings')
+              for n in names:
+                  path=pathlib.PurePosixPath(n)
+                  if path.is_absolute() or '..' in path.parts: sys.exit('Unsafe ZIP path')
+              z.extractall('source')
+          PY
+          find source -maxdepth 3 -type f | sort
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Build debug APK
+        run: |
+          cd source/AppVisualBuilder
+          if [ -f gradlew ]; then chmod +x gradlew; ./gradlew --no-daemon assembleDebug --stacktrace; else
+            wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip -O /tmp/gradle.zip
+            unzip -q /tmp/gradle.zip -d /tmp
+            /tmp/gradle-8.9/bin/gradle --no-daemon assembleDebug --stacktrace
+          fi
+      - name: Verify APK
+        run: |
+          find source -path '*/build/outputs/apk/debug/*.apk' -type f -size +100k -print -exec sha256sum {} \;
+          test -n "$(find source -path '*/build/outputs/apk/debug/*.apk' -type f -size +100k -print -quit)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AppVisualBuilder-debug-apk
+          path: source/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
