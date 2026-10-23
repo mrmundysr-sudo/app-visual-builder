@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build:
-    uses: mrmundysr-sudo/touch-development/.github/workflows/android-build.yml@1926b52b24140572a299004a023f692f9357b83e # v1.0.0
+    uses: mrmundysr-sudo/touch-development/.github/workflows/android-build.yml@1805a7d537c7a0012c992efe919d6ba971bdcfa7 # candidate fix (test only)
     with:
       artifact_name: AppVisualBuilder-debug-${{ github.run_number }}
       java_version: "17"
