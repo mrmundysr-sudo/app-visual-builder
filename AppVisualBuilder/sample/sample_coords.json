@@ -1,0 +1,9 @@
+{
+  "schema": "app-visual-builder/coords@1",
+  "image_size": { "w": 1080, "h": 1920 },
+  "items": [
+    { "n": 1, "type": "box",   "label": "play_button",  "x": 0.25, "y": 0.70, "w": 0.50, "h": 0.10 },
+    { "n": 2, "type": "box",   "label": "settings_btn", "x": 0.80, "y": 0.03, "w": 0.15, "h": 0.07 },
+    { "n": 3, "type": "point", "label": "logo_center",  "x": 0.50, "y": 0.25 }
+  ]
+}
