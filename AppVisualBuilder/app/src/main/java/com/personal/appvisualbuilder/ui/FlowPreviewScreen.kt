@@ -226,7 +226,11 @@ private fun PageArt(vm: AppViewModel, projectId: String, page: Page, markupShown
         if (asset == null) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(page.name, color = Color.White, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-                Text("No clean art yet", color = Color(0xFF8A90A0), style = MaterialTheme.typography.bodyMedium)
+                val wanted = page.need?.assets?.firstOrNull { it.slot == Slot.CLEAN }?.name
+                Text(
+                    if (wanted != null) "Still needed: $wanted" else "No clean art yet",
+                    color = Color(0xFF8A90A0), style = MaterialTheme.typography.bodyMedium
+                )
             }
         } else {
             AsyncImage(

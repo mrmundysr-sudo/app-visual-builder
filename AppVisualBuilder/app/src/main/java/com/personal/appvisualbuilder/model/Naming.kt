@@ -38,6 +38,21 @@ object Naming {
         return candidate
     }
 
+    /** Filename for a file filling a template need: the wanted name, with the extension of the file actually picked. */
+    fun forNeed(need: NeedAsset, originalName: String): String {
+        val needExt = extensionOf(need.name)
+        val stem = if (needExt.isEmpty()) need.name else need.name.dropLast(needExt.length + 1)
+        val ext = when (need.slot) {
+            Slot.PSD -> "psd"
+            Slot.COORDS -> "json"
+            else -> extensionOf(originalName).ifEmpty { needExt }
+        }
+        return if (ext.isEmpty()) stem else "$stem.$ext"
+    }
+
+    /** Keeps a wanted filename safe to use as a zip path. */
+    fun safeFile(name: String): String = name.replace(Regex("[^A-Za-z0-9._-]+"), "_")
+
     fun extensionOf(name: String): String =
         if (name.contains('.')) name.substringAfterLast('.').lowercase().filter { it.isLetterOrDigit() } else ""
 

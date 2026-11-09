@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,9 +44,15 @@ import java.util.Date
 @Composable
 fun HomeScreen(vm: AppViewModel) {
     var showNew by remember { mutableStateOf(false) }
+    val importNeeds = rememberNeedsImport(vm, update = false)
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("App Visual Builder") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("App Visual Builder") },
+                actions = { TextButton(onClick = importNeeds) { Text("Import needs") } }
+            )
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showNew = true },

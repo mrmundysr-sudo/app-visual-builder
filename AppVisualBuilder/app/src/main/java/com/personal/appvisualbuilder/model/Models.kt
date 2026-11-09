@@ -22,7 +22,53 @@ data class AssetFile(
     val storedName: String,
     val originalName: String,
     val extension: String,
-    val addedAt: Long
+    val addedAt: Long,
+    /** Which template need (NeedAsset.key) this file fulfils. Null for free-form files. */
+    val needKey: String? = null
+)
+
+/** One file the template asks for. [name] is the exact filename wanted; filling it names the file automatically. */
+@Serializable
+data class NeedAsset(
+    val key: String,
+    val slot: Slot,
+    val name: String,
+    val description: String = "",
+    val required: Boolean = true
+) {
+    /** Filled when a file points at this need, or (for single slots) anything sits in the slot. */
+    fun isFilledIn(page: Page): Boolean =
+        page.files.any { it.needKey == key } || (!slot.multiple && page.filesIn(slot).isNotEmpty())
+}
+
+/** A touch region the template asks for. Position is filled in by the user on the Place regions screen. */
+@Serializable
+data class NeedRegion(
+    val label: String,
+    val type: String = "box",
+    val action: String = "",
+    val required: Boolean = true,
+    val x: Double? = null,
+    val y: Double? = null,
+    val w: Double? = null,
+    val h: Double? = null
+) {
+    val isBox get() = type == "box"
+    val placed get() = x != null && y != null && (!isBox || (w != null && h != null))
+}
+
+/** The template for one page, written by the AI coder side and imported from a needs file. */
+@Serializable
+data class PageNeed(
+    /** Stable key from the needs file, used to match on re-import. */
+    val key: String,
+    val purpose: String = "",
+    val width: Int? = null,
+    val height: Int? = null,
+    val assets: List<NeedAsset> = emptyList(),
+    /** Layer names to use in the PSD. Names only, never checked against the file. */
+    val layers: List<String> = emptyList(),
+    val regions: List<NeedRegion> = emptyList()
 )
 
 @Serializable
@@ -31,7 +77,9 @@ data class Page(
     val id: String,
     val name: String,
     val notes: String = "",
-    val files: List<AssetFile> = emptyList()
+    val files: List<AssetFile> = emptyList(),
+    /** Null for pages not created from a needs file. */
+    val need: PageNeed? = null
 ) {
     fun filesIn(slot: Slot): List<AssetFile> = files.filter { it.slot == slot }
     fun clean(): AssetFile? = filesIn(Slot.CLEAN).firstOrNull()

@@ -6,6 +6,7 @@ import com.personal.appvisualbuilder.model.AssetFile
 import com.personal.appvisualbuilder.model.CoordsParser
 import com.personal.appvisualbuilder.model.CoordsResult
 import com.personal.appvisualbuilder.model.Naming
+import com.personal.appvisualbuilder.model.NeedRegion
 import com.personal.appvisualbuilder.model.Page
 import com.personal.appvisualbuilder.model.Project
 import com.personal.appvisualbuilder.model.Slot
@@ -14,6 +15,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
 import java.io.File
 import java.time.OffsetDateTime
@@ -34,12 +36,26 @@ class Exporter(private val repo: ProjectRepository) {
     fun placements(page: Page): List<ZipPlacement> {
         val folder = "pages/${Naming.pageFolder(page)}"
         fun ext(a: AssetFile) = if (a.extension.isEmpty()) "" else ".${a.extension}"
+        // Files that fill a template need keep the exact filename the template asked for, so their
+        // path never depends on what else is filled. Free-form files keep the numbered names.
+        fun keyed(a: AssetFile): String? {
+            val need = page.need?.assets?.firstOrNull { it.key == a.needKey } ?: return null
+            return Naming.safeFile(Naming.forNeed(need, "f${ext(a)}"))
+        }
         val out = mutableListOf<ZipPlacement>()
         page.filesIn(Slot.CLEAN).firstOrNull()?.let { out += ZipPlacement(it, "$folder/clean${ext(it)}") }
-        page.filesIn(Slot.MARKUP).forEachIndexed { i, a -> out += ZipPlacement(a, "$folder/markup_${i + 1}${ext(a)}") }
+        var m = 0
+        page.filesIn(Slot.MARKUP).forEach { a ->
+            val k = keyed(a)
+            out += ZipPlacement(a, "$folder/" + (k ?: "markup_${++m}${ext(a)}"))
+        }
         page.filesIn(Slot.PSD).firstOrNull()?.let { out += ZipPlacement(it, "$folder/layers.psd") }
         page.filesIn(Slot.COORDS).firstOrNull()?.let { out += ZipPlacement(it, "$folder/coords.json") }
-        page.filesIn(Slot.OTHER).forEachIndexed { i, a -> out += ZipPlacement(a, "$folder/other_${i + 1}${ext(a)}") }
+        var o = 0
+        page.filesIn(Slot.OTHER).forEach { a ->
+            val k = keyed(a)
+            out += ZipPlacement(a, "$folder/" + (k ?: "other_${++o}${ext(a)}"))
+        }
         return out
     }
 
@@ -58,6 +74,24 @@ class Exporter(private val repo: ProjectRepository) {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, opts)
         return if (opts.outWidth > 0 && opts.outHeight > 0) opts.outWidth to opts.outHeight else null
+    }
+
+    // ---------- template needs ----------
+
+    /** Labels of the items in a valid coords file (counts as "placed" for template regions). */
+    fun coordLabels(project: Project, page: Page): Set<String> =
+        readCoords(project, page)?.takeIf { it.ok }?.items?.map { it.label }?.toSet().orEmpty()
+
+    fun isPlaced(r: NeedRegion, coordLabels: Set<String>) = r.placed || r.label in coordLabels
+
+    /** Human-readable list of required template items still empty. Empty list = page is complete. */
+    fun openNeeds(project: Project, page: Page): List<String> {
+        val need = page.need ?: return emptyList()
+        val labels = coordLabels(project, page)
+        val out = mutableListOf<String>()
+        need.assets.filter { it.required && !it.isFilledIn(page) }.forEach { out += "file ${it.name}" }
+        need.regions.filter { it.required && !isPlaced(it, labels) }.forEach { out += "region ${it.label}" }
+        return out
     }
 
     // ---------- checks (warn, never block) ----------
@@ -79,6 +113,22 @@ class Exporter(private val repo: ProjectRepository) {
                 problems += Problem(page.id, "$label has no clean art")
                 if (page.filesIn(Slot.MARKUP).isNotEmpty()) problems += Problem(page.id, "$label has markup but no clean art")
             }
+            page.need?.let { need ->
+                val labels = coordLabels(project, page)
+                need.assets.filter { it.required && !it.isFilledIn(page) && !(it.slot == Slot.CLEAN) }
+                    .forEach { problems += Problem(page.id, "$label still needed: ${it.name}") }
+                need.regions.filter { it.required && !isPlaced(it, labels) }
+                    .forEach { problems += Problem(page.id, "$label region not placed: ${it.label}") }
+                val w = need.width
+                val h = need.height
+                if (clean != null && w != null && h != null) {
+                    imageSize(project, clean)?.let { (cw, ch) ->
+                        val a = w.toDouble() / h
+                        val b = cw.toDouble() / ch
+                        if (kotlin.math.abs(a - b) / b > 0.02) problems += Problem(page.id, "$label clean art is ${cw}x$ch but the template asks for ${w}x$h")
+                    }
+                }
+            }
             val coords = readCoords(project, page)
             if (coords != null) {
                 coords.errors.forEach { problems += Problem(page.id, "$label coords: $it") }
@@ -98,6 +148,7 @@ class Exporter(private val repo: ProjectRepository) {
     private fun slotEntry(project: Project, page: Page, p: ZipPlacement): JsonElement = buildJsonObject {
         put("path", p.zipPath)
         put("display_name", p.asset.displayName)
+        p.asset.needKey?.let { put("need", it) }
     }
 
     fun buildManifest(project: Project): String {
@@ -129,23 +180,56 @@ class Exporter(private val repo: ProjectRepository) {
                             put("coords", one(Slot.COORDS))
                             put("other", many(Slot.OTHER))
                         })
-                        val w = coords?.imageW
-                        val h = coords?.imageH
+                        val w = coords?.imageW ?: page.need?.width
+                        val h = coords?.imageH ?: page.need?.height
                         if (w != null && h != null) {
                             put("image_size", buildJsonObject { put("w", w); put("h", h) })
                         } else {
                             put("image_size", JsonNull)
                         }
+                        val need = page.need
+                        val regionByLabel = need?.regions?.associateBy { it.label }.orEmpty()
+                        if (need != null) {
+                            put("purpose", need.purpose)
+                            put("layers", buildJsonArray { need.layers.forEach { add(it) } })
+                            put("open_needs", buildJsonArray { openNeeds(project, page).forEach { add(it) } })
+                            put("regions", buildJsonArray {
+                                need.regions.forEach { r ->
+                                    add(buildJsonObject {
+                                        put("label", r.label)
+                                        put("type", r.type)
+                                        put("action", r.action)
+                                        put("required", r.required)
+                                        put("placed", r.placed)
+                                    })
+                                }
+                            })
+                        }
                         put("items", buildJsonArray {
-                            if (coords != null && coords.ok) coords.items.forEach { item ->
-                                add(buildJsonObject {
-                                    put("n", item.n)
-                                    put("type", item.type)
-                                    put("label", item.label)
-                                    put("x", item.x)
-                                    put("y", item.y)
-                                    if (item.isBox) { put("w", item.w ?: 0.0); put("h", item.h ?: 0.0) }
-                                })
+                            if (coords != null && coords.ok) {
+                                coords.items.forEach { item ->
+                                    add(buildJsonObject {
+                                        put("n", item.n)
+                                        put("type", item.type)
+                                        put("label", item.label)
+                                        put("x", item.x)
+                                        put("y", item.y)
+                                        if (item.isBox) { put("w", item.w ?: 0.0); put("h", item.h ?: 0.0) }
+                                        regionByLabel[item.label]?.action?.takeIf { it.isNotBlank() }?.let { put("action", it) }
+                                    })
+                                }
+                            } else {
+                                need?.regions?.filter { it.placed }?.forEachIndexed { i, r ->
+                                    add(buildJsonObject {
+                                        put("n", i + 1)
+                                        put("type", r.type)
+                                        put("label", r.label)
+                                        put("x", r.x ?: 0.0)
+                                        put("y", r.y ?: 0.0)
+                                        if (r.isBox) { put("w", r.w ?: 0.0); put("h", r.h ?: 0.0) }
+                                        if (r.action.isNotBlank()) put("action", r.action)
+                                    })
+                                }
                             }
                         })
                     })
@@ -192,6 +276,20 @@ class Exporter(private val repo: ProjectRepository) {
             if (page.notes.isNotBlank()) {
                 appendLine("**Notes:** ${page.notes.trim()}")
                 appendLine()
+            }
+            page.need?.let { need ->
+                if (need.purpose.isNotBlank()) { appendLine("**Purpose:** ${need.purpose}"); appendLine() }
+                if (need.layers.isNotEmpty()) { appendLine("**PSD layers:** ${need.layers.joinToString(", ")}"); appendLine() }
+                val open = openNeeds(project, page)
+                if (open.isNotEmpty()) { appendLine("**Still empty (not supplied yet):** ${open.joinToString("; ")}"); appendLine() }
+                if (need.regions.isNotEmpty()) {
+                    appendLine("Regions:")
+                    need.regions.forEach { r ->
+                        val pos = if (!r.placed) "not placed" else if (r.isBox) "x=${r.x}, y=${r.y}, w=${r.w}, h=${r.h}" else "x=${r.x}, y=${r.y}"
+                        appendLine("- `${r.label}` (${r.type}) $pos${if (r.action.isNotBlank()) " | action: ${r.action}" else ""}")
+                    }
+                    appendLine()
+                }
             }
             val placed = placements(page)
             if (placed.isEmpty()) appendLine("_No files attached._")

@@ -17,6 +17,7 @@ import com.personal.appvisualbuilder.ui.FlowPreviewScreen
 import com.personal.appvisualbuilder.ui.HomeScreen
 import com.personal.appvisualbuilder.ui.PageEditorScreen
 import com.personal.appvisualbuilder.ui.ProjectScreen
+import com.personal.appvisualbuilder.ui.RegionPlaceScreen
 import com.personal.appvisualbuilder.ui.Screen
 import com.personal.appvisualbuilder.ui.SetupScreen
 
@@ -44,6 +45,7 @@ private fun Root(vm: AppViewModel, exit: () -> Unit) {
         is Screen.ProjectHome -> ProjectScreen(vm)
         is Screen.Setup -> SetupScreen(vm)
         is Screen.PageEditor -> PageEditorScreen(vm, s.pageId)
+        is Screen.RegionPlace -> RegionPlaceScreen(vm, s.pageId)
         is Screen.CoordsPreview -> CoordsPreviewScreen(vm, s.pageId)
         is Screen.FlowPreview -> FlowPreviewScreen(vm, s.startIndex)
     }

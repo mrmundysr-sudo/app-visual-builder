@@ -323,3 +323,59 @@ Contains:
 8. Polish: drag-to-reorder, empty states, error toasts.
 
 The starter project covers steps 1, 2, 3 (basic), 5, 7 in working code and steps 4 and 6 as functional first versions.
+
+---
+
+## 13. Template workflow (needs file)
+
+The AI coder side writes a **needs file** (`app-visual-builder/needs@1`) listing everything it needs for a new app. The builder imports it and becomes a fill-in template; you fill it in, export, and hand the zip back.
+
+Flow:
+1. Download the needs file (`<app>_needs.json`). In the builder: **Import needs** (home screen). It shows page/file/region counts and asks before creating the project.
+2. Each page shows a **Template** card: purpose, art size, PSD layer names (names only, never checked against the file), every requested file, and every region to place.
+3. **Add** on a requested file opens the picker and names the file exactly as the template asks (no dialog). The wanted extension is replaced by the picked file's real extension.
+4. **Place regions**: pick a region, drag a box (or tap a point) over the art. Works before the clean art exists, using the template's art size.
+5. Skipping is always allowed. Empty items are flagged "still needed" on the page, the project list, the flow preview placeholder and the export check. Export never blocks.
+6. **Update from needs file** (project screen) merges a newer needs file: pages match by `key`; nothing is removed, and files, notes, page names and placed regions are kept.
+
+```json
+{
+  "schema": "app-visual-builder/needs@1",
+  "app_name": "Sample Word Hunt",
+  "pages": [
+    {
+      "key": "gameplay",
+      "name": "Gameplay",
+      "purpose": "Main puzzle screen.",
+      "size": { "w": 1080, "h": 1920 },
+      "notes": "Instructions copied into the page notes.",
+      "assets": [
+        { "key": "clean", "slot": "clean", "name": "gameplay_clean.png", "description": "...", "required": true },
+        { "key": "pause_pressed", "slot": "other", "name": "pause_btn_pressed.png" }
+      ],
+      "layers": ["background", "grid_frame"],
+      "regions": [
+        { "label": "pause_btn", "type": "box", "action": "open the pause menu", "required": true }
+      ]
+    }
+  ]
+}
+```
+
+| Field | Rule |
+|---|---|
+| `schema` | Required, `app-visual-builder/needs@1` |
+| `app_name` | Required |
+| `pages[].key` | Stable ID for merging. Defaults to the name slug |
+| `pages[].name` | Required |
+| `assets[].slot` | `clean`, `markup`, `psd`, `coords` or `other`. Only one clean/psd/coords per page |
+| `assets[].name` | Exact filename wanted |
+| `assets[].key` | Stable ID. Defaults to the name stem |
+| `assets[].required`, `regions[].required` | Default true |
+| `regions[].type` | `box` (default) or `point` |
+| `regions[].action` | What the touch does. Copied to the manifest |
+
+Export effects:
+- A file that fills a template need in the `markup` or `other` slot keeps the wanted filename in the zip (for example `pause_btn_pressed.png`), so its path never depends on what else is filled. `clean`, `layers.psd` and `coords.json` keep their fixed names. The manifest adds a `need` key to those entries.
+- Manifest pages gain `purpose`, `layers`, `regions` (with `action`, `placed`), and `open_needs` (what is still empty). `items` comes from the coords file if valid, otherwise from placed regions; each item gets its region's `action`.
+- Export checks add: required file still needed, required region not placed, clean art aspect differs from the template's size.

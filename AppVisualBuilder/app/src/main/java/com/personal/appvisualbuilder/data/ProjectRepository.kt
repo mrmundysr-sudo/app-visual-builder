@@ -6,7 +6,9 @@ import android.provider.OpenableColumns
 import com.personal.appvisualbuilder.model.ArchiveEntry
 import com.personal.appvisualbuilder.model.ArchiveIndex
 import com.personal.appvisualbuilder.model.AssetFile
+import com.personal.appvisualbuilder.model.NeedRegion
 import com.personal.appvisualbuilder.model.Naming
+import com.personal.appvisualbuilder.model.NeedsFile
 import com.personal.appvisualbuilder.model.Page
 import com.personal.appvisualbuilder.model.Project
 import com.personal.appvisualbuilder.model.Slot
@@ -143,7 +145,7 @@ class ProjectRepository(private val context: Context) {
      * Attach a picked file. For single slots (Clean, PSD, Coords) an existing file is archived
      * first, so the slot is overwritten but the old file can be restored.
      */
-    fun attach(projectId: String, pageId: String, slot: Slot, uri: Uri, displayName: String, originalName: String): Project? =
+    fun attach(projectId: String, pageId: String, slot: Slot, uri: Uri, displayName: String, originalName: String, needKey: String? = null): Project? =
         edit(projectId) { p ->
             val page = p.pages.firstOrNull { it.id == pageId } ?: return@edit p
             if (!slot.multiple) page.filesIn(slot).forEach { archiveAsset(projectId, pageId, it) }
@@ -156,7 +158,7 @@ class ProjectRepository(private val context: Context) {
             }
             val asset = AssetFile(
                 id = assetId, slot = slot, displayName = displayName, storedName = stored,
-                originalName = originalName, extension = ext, addedAt = System.currentTimeMillis()
+                originalName = originalName, extension = ext, addedAt = System.currentTimeMillis(), needKey = needKey
             )
             p.copy(pages = p.pages.map { pg ->
                 if (pg.id != pageId) pg
@@ -165,7 +167,7 @@ class ProjectRepository(private val context: Context) {
         }
 
     /** Replace one specific file (used for Markup/Other where several files exist). */
-    fun replaceAsset(projectId: String, pageId: String, oldAssetId: String, uri: Uri, displayName: String, originalName: String): Project? =
+    fun replaceAsset(projectId: String, pageId: String, oldAssetId: String, uri: Uri, displayName: String, originalName: String, needKey: String? = null): Project? =
         edit(projectId) { p ->
             val page = p.pages.firstOrNull { it.id == pageId } ?: return@edit p
             val old = page.files.firstOrNull { it.id == oldAssetId } ?: return@edit p
@@ -178,7 +180,8 @@ class ProjectRepository(private val context: Context) {
                 File(assetsDir(projectId), stored).outputStream().use { input.copyTo(it) }
             }
             val asset = old.copy(id = assetId, displayName = displayName, storedName = stored,
-                originalName = originalName, extension = ext, addedAt = System.currentTimeMillis())
+                originalName = originalName, extension = ext, addedAt = System.currentTimeMillis(),
+                needKey = needKey ?: old.needKey)
             p.copy(pages = p.pages.map { pg ->
                 if (pg.id != pageId) pg
                 else pg.copy(files = pg.files.map { if (it.id == oldAssetId) asset else it })
@@ -198,6 +201,91 @@ class ProjectRepository(private val context: Context) {
         archiveAsset(projectId, pageId, asset)
         p.copy(pages = p.pages.map { pg ->
             if (pg.id != pageId) pg else pg.copy(files = pg.files.filterNot { it.id == assetId })
+        })
+    }
+
+    /**
+     * Fill a template need. The file is named exactly as the template asks (no dialog), keeping the
+     * picked file's extension. If the need is already filled, the old file is archived and replaced.
+     */
+    fun attachForNeed(projectId: String, pageId: String, needKey: String, uri: Uri, originalName: String): Project? {
+        val project = load(projectId) ?: return null
+        val page = project.pages.firstOrNull { it.id == pageId } ?: return null
+        val need = page.need?.assets?.firstOrNull { it.key == needKey } ?: return null
+        val name = Naming.forNeed(need, originalName)
+        val existing = page.files.firstOrNull { it.needKey == needKey }
+            ?: if (!need.slot.multiple) page.filesIn(need.slot).firstOrNull() else null
+        return if (existing != null) replaceAsset(projectId, pageId, existing.id, uri, name, originalName, needKey)
+        else attach(projectId, pageId, need.slot, uri, name, originalName, needKey)
+    }
+
+    // ---------- templates (needs files) ----------
+
+    fun readText(uri: Uri): String = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+    }.getOrDefault("")
+
+    fun createFromNeeds(file: NeedsFile): Project {
+        val now = System.currentTimeMillis()
+        val pages = file.pages.mapIndexed { i, np ->
+            Page(id = Naming.pageId(i + 1), name = np.name, notes = np.notes, need = np.need)
+        }
+        return save(
+            Project(
+                id = UUID.randomUUID().toString(), name = file.appName, createdAt = now, modifiedAt = now,
+                nextPageNumber = pages.size + 1, pages = pages
+            )
+        )
+    }
+
+    /**
+     * Apply a newer needs file to an existing project. Pages match by need key (or by name for pages
+     * made by hand). Nothing is deleted: filled files, notes, page names and placed regions are kept.
+     */
+    fun mergeNeeds(projectId: String, file: NeedsFile): Project? = edit(projectId) { project ->
+        var pages = project.pages
+        var next = project.nextPageNumber
+        file.pages.forEach { np ->
+            val idx = pages.indexOfFirst { it.need?.key == np.need.key }.takeIf { it >= 0 }
+                ?: pages.indexOfFirst { it.need == null && it.name.trim().equals(np.name, ignoreCase = true) }
+            if (idx >= 0) {
+                val old = pages[idx]
+                val oldRegions = old.need?.regions.orEmpty().associateBy { it.label }
+                val regions = np.need.regions.map { r ->
+                    oldRegions[r.label]?.let { o -> r.copy(x = o.x, y = o.y, w = o.w, h = o.h) } ?: r
+                }
+                val renamed = np.need.assets.associateBy { it.key }
+                val files = old.files.map { f ->
+                    val n = f.needKey?.let { renamed[it] }
+                    if (n != null) f.copy(displayName = Naming.forNeed(n, "x.${f.extension}")) else f
+                }
+                pages = pages.toMutableList().also {
+                    it[idx] = old.copy(
+                        notes = old.notes.ifBlank { np.notes },
+                        files = files,
+                        need = np.need.copy(regions = regions)
+                    )
+                }
+            } else {
+                pages = pages + Page(id = Naming.pageId(next), name = np.name, notes = np.notes, need = np.need)
+                next++
+            }
+        }
+        project.copy(pages = pages, nextPageNumber = next)
+    }
+
+    /** Place (or move) a template region. Values are normalized 0..1. */
+    fun setRegion(projectId: String, pageId: String, label: String, x: Double, y: Double, w: Double?, h: Double?) =
+        editRegions(projectId, pageId, label) { it.copy(x = x, y = y, w = if (it.isBox) w else null, h = if (it.isBox) h else null) }
+
+    fun clearRegion(projectId: String, pageId: String, label: String) =
+        editRegions(projectId, pageId, label) { it.copy(x = null, y = null, w = null, h = null) }
+
+    private fun editRegions(projectId: String, pageId: String, label: String, block: (NeedRegion) -> NeedRegion) = edit(projectId) { p ->
+        p.copy(pages = p.pages.map { pg ->
+            val need = pg.need
+            if (pg.id != pageId || need == null) pg
+            else pg.copy(need = need.copy(regions = need.regions.map { if (it.label == label) block(it) else it }))
         })
     }
 

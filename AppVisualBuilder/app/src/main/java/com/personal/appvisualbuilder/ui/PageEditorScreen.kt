@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.personal.appvisualbuilder.model.AssetFile
 import com.personal.appvisualbuilder.model.Naming
+import com.personal.appvisualbuilder.model.NeedAsset
 import com.personal.appvisualbuilder.model.Page
 import com.personal.appvisualbuilder.model.Slot
 import kotlinx.coroutines.delay
@@ -61,18 +63,32 @@ fun PageEditorScreen(vm: AppViewModel, pageId: String) {
     var pickReplace by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf<Pending?>(null) }
     var restoreSlot by remember { mutableStateOf<Slot?>(null) }
+    // Set while the picker is open for a template item: the file is named from the template, no dialog.
+    var pickNeed by remember { mutableStateOf<NeedAsset?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val slot = pickSlot
-        if (uri != null && slot != null) {
+        val need = pickNeed
+        if (uri != null && need != null) {
+            vm.attachForNeed(page.id, need.key, uri, vm.repo.queryName(uri))
+        } else if (uri != null && slot != null) {
             pending = Pending(slot, uri, vm.repo.queryName(uri), pickReplace)
         }
+        pickNeed = null
     }
 
     fun launch(slot: Slot, replaceId: String?) {
+        pickNeed = null
         pickSlot = slot
         pickReplace = replaceId
         picker.launch(if (slot == Slot.CLEAN || slot == Slot.MARKUP) "image/*" else "*/*")
+    }
+
+    fun launchNeed(need: NeedAsset) {
+        pickNeed = need
+        pickSlot = need.slot
+        pickReplace = null
+        picker.launch(if (need.slot == Slot.CLEAN || need.slot == Slot.MARKUP) "image/*" else "*/*")
     }
 
     // Page notes: edit locally, save shortly after typing stops.
@@ -105,6 +121,13 @@ fun PageEditorScreen(vm: AppViewModel, pageId: String) {
                 modifier = Modifier.fillMaxWidth()
             )
 
+            NeedsChecklist(vm, page, onFill = { launchNeed(it) })
+
+            if (page.need != null) {
+                Text("Other files for this page", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
             Slot.entries.forEach { slot ->
                 SlotCard(
                     vm = vm,
@@ -115,6 +138,21 @@ fun PageEditorScreen(vm: AppViewModel, pageId: String) {
                     onReplace = { asset -> launch(slot, asset.id) },
                     onRestore = { restoreSlot = slot }
                 )
+            }
+
+            // Moving on is always allowed. Anything left empty stays flagged in the checklist and export.
+            val index = project.pages.indexOfFirst { it.id == page.id }
+            val next = project.pages.getOrNull(index + 1)
+            val open = remember(project) { vm.exporter.openNeeds(project, page).size }
+            if (next != null) {
+                Button(
+                    onClick = { vm.replaceTop(Screen.PageEditor(project.id, next.id)) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (open > 0) "Skip for now. Next: ${next.name}" else "Next: ${next.name}") }
+            } else {
+                Button(onClick = { vm.back() }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (open > 0) "Back to project ($open still needed)" else "Back to project")
+                }
             }
         }
     }

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -64,6 +65,9 @@ fun ProjectScreen(vm: AppViewModel) {
     var showCheck by remember { mutableStateOf(false) }
     var exported by remember { mutableStateOf<File?>(null) }
     var busy by remember { mutableStateOf(false) }
+    val importNeeds = rememberNeedsImport(vm, update = true)
+    val openByPage = remember(project) { project.pages.associate { it.id to vm.exporter.openNeeds(project, it).size } }
+    val firstOpen = project.pages.firstOrNull { (openByPage[it.id] ?: 0) > 0 }
 
     Scaffold(
         topBar = {
@@ -71,6 +75,7 @@ fun ProjectScreen(vm: AppViewModel) {
                 title = { Text(project.name) },
                 navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
+                    IconButton(onClick = importNeeds) { Icon(Icons.Default.Sync, "Update from needs file") }
                     IconButton(onClick = { vm.go(Screen.Setup(project.id)) }) { Icon(Icons.Default.Settings, "Setup") }
                 }
             )
@@ -94,13 +99,21 @@ fun ProjectScreen(vm: AppViewModel) {
                 }
             }
 
+            if (firstOpen != null) {
+                val total = openByPage.values.sum()
+                TextButton(
+                    onClick = { vm.go(Screen.PageEditor(project.id, firstOpen.id)) },
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                ) { Text("$total still needed. Continue with ${firstOpen.name}") }
+            }
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 itemsIndexed(project.pages, key = { _, p -> p.id }) { index, page ->
-                    PageRow(vm, project.id, index, page, problems.any { it.pageId == page.id })
+                    PageRow(vm, project.id, index, page, problems.any { it.pageId == page.id }, openByPage[page.id] ?: 0)
                 }
             }
         }
@@ -140,7 +153,7 @@ fun ProjectScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun PageRow(vm: AppViewModel, projectId: String, index: Int, page: Page, hasProblem: Boolean) {
+private fun PageRow(vm: AppViewModel, projectId: String, index: Int, page: Page, hasProblem: Boolean, open: Int) {
     val clean = page.clean()
     Card(
         modifier = Modifier.fillMaxWidth().clickable { vm.go(Screen.PageEditor(projectId, page.id)) },
@@ -152,6 +165,13 @@ private fun PageRow(vm: AppViewModel, projectId: String, index: Int, page: Page,
             Column(Modifier.weight(1f)) {
                 Text("${index + 1}. ${page.name}", style = MaterialTheme.typography.titleMedium)
                 Text(page.id, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (page.need != null) {
+                    Text(
+                        if (open == 0) "Template complete" else "$open still needed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (open == 0) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color(0xFFFFB74D)
+                    )
+                }
                 Spacer(Modifier.padding(2.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(Slot.CLEAN, Slot.MARKUP, Slot.PSD, Slot.COORDS).forEach { slot ->

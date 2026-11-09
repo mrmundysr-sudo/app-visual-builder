@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import com.personal.appvisualbuilder.data.ProjectRepository
 import com.personal.appvisualbuilder.export.Exporter
 import com.personal.appvisualbuilder.model.ArchiveEntry
+import com.personal.appvisualbuilder.model.NeedsFile
 import com.personal.appvisualbuilder.model.Project
 import com.personal.appvisualbuilder.model.Slot
 
@@ -17,6 +18,7 @@ sealed class Screen {
     data class ProjectHome(val projectId: String) : Screen()
     data class Setup(val projectId: String) : Screen()
     data class PageEditor(val projectId: String, val pageId: String) : Screen()
+    data class RegionPlace(val projectId: String, val pageId: String) : Screen()
     data class CoordsPreview(val projectId: String, val pageId: String) : Screen()
     data class FlowPreview(val projectId: String, val startIndex: Int = 0) : Screen()
 }
@@ -44,6 +46,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         screen = next
         if (next is Screen.ProjectHome && current?.id != next.projectId) current = repo.load(next.projectId)
         if (next is Screen.Home) refreshList()
+    }
+
+    /** Swap the current screen for another (used for Next page, so Back doesn't pile up). */
+    fun replaceTop(next: Screen) {
+        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+        stack += next
+        screen = next
     }
 
     /** Returns false if already at the root (let the system handle back). */
@@ -76,6 +85,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun duplicateProject(id: String) { repo.duplicate(id); refreshList() }
     fun deleteProject(id: String) { repo.delete(id); if (current?.id == id) current = null; refreshList() }
     fun renameProject(id: String, name: String) { apply(repo.rename(id, name)) }
+
+    // ---------- template (needs file) ----------
+
+    fun createFromNeeds(file: NeedsFile) {
+        val p = repo.createFromNeeds(file)
+        refreshList()
+        current = p
+        go(Screen.ProjectHome(p.id))
+    }
+
+    fun mergeNeeds(file: NeedsFile) { current?.let { apply(repo.mergeNeeds(it.id, file)) } }
+
+    fun attachForNeed(pageId: String, needKey: String, uri: Uri, originalName: String) {
+        current?.let { apply(repo.attachForNeed(it.id, pageId, needKey, uri, originalName)) }
+    }
+
+    fun setRegion(pageId: String, label: String, x: Double, y: Double, w: Double?, h: Double?) {
+        current?.let { apply(repo.setRegion(it.id, pageId, label, x, y, w, h)) }
+    }
+
+    fun clearRegion(pageId: String, label: String) { current?.let { apply(repo.clearRegion(it.id, pageId, label)) } }
 
     // ---------- pages ----------
 

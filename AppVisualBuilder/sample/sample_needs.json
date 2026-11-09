@@ -1,0 +1,40 @@
+{
+  "schema": "app-visual-builder/needs@1",
+  "app_name": "Sample Word Hunt",
+  "pages": [
+    {
+      "key": "splash",
+      "name": "Splash",
+      "purpose": "Title screen shown on launch. Tap anywhere to continue.",
+      "size": { "w": 1080, "h": 1920 },
+      "notes": "Fade in over 1s, then wait for a tap.",
+      "assets": [
+        { "key": "clean", "slot": "clean", "name": "splash_clean.png", "description": "Final title art, no text that code draws" },
+        { "key": "layers", "slot": "psd", "name": "splash_layers.psd", "required": false }
+      ],
+      "layers": ["background", "logo", "tap_prompt"],
+      "regions": [
+        { "label": "logo_center", "type": "point", "action": "logo animates here", "required": false }
+      ]
+    },
+    {
+      "key": "gameplay",
+      "name": "Gameplay",
+      "purpose": "Main puzzle screen with the letter grid.",
+      "size": { "w": 1080, "h": 1920 },
+      "notes": "Letters are live text drawn by code, so leave the tiles empty.",
+      "assets": [
+        { "key": "clean", "slot": "clean", "name": "gameplay_clean.png", "description": "Grid frame, no letters" },
+        { "key": "layers", "slot": "psd", "name": "gameplay_layers.psd", "required": false },
+        { "key": "pause_normal", "slot": "other", "name": "pause_btn_normal.png", "description": "Pause button, resting" },
+        { "key": "pause_pressed", "slot": "other", "name": "pause_btn_pressed.png", "description": "Pause button, pressed" }
+      ],
+      "layers": ["background", "grid_frame", "timer_panel", "pause_button"],
+      "regions": [
+        { "label": "letter_grid", "type": "box", "action": "drag across letters to select a word" },
+        { "label": "pause_btn", "type": "box", "action": "open the pause menu" },
+        { "label": "timer", "type": "box", "action": "countdown text is drawn here", "required": false }
+      ]
+    }
+  ]
+}

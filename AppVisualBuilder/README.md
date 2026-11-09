@@ -26,6 +26,7 @@ The Gradle wrapper jar/scripts are not included. Android Studio doesn't need the
 | Flow preview (swipe/edge tap, overlay, markup toggle, end hints, wrap) | Working first version |
 | Export checks, manifest.json, README.md, zip | Working (`export/Exporter.kt`) |
 | Share sheet + Save to Downloads (Android 10+) | Working |
+| Needs-file template: import, checklist, auto-named files, region placing, merge updates (SPEC section 13) | First version, needs device testing |
 
 ## Not done yet (good next tasks for the coder)
 
@@ -42,10 +43,12 @@ app/src/main/java/com/personal/appvisualbuilder/
   model/Models.kt          Project, Page, AssetFile, Slot, archive types
   model/Naming.kt          slugs, filename suggestions, page IDs
   model/Coords.kt          coords@1 parser + validator
+  model/Needs.kt           needs@1 parser (template files)
   data/ProjectRepository.kt  all storage, archive, restore
   export/Exporter.kt       checks, manifest, README, zip layout
   ui/                      Compose screens (Home, Project, Setup, PageEditor, CoordsPreview, FlowPreview)
 sample/sample_coords.json  example file in the coords@1 format
+sample/sample_needs.json   example needs file (template)
 ```
 
 ## Golden rule
